@@ -8,9 +8,9 @@ Whether you're onboarding a new hire, resetting an MFA token, or hunting down sh
 
 ## 📋 Table of Contents
 
-- [Getting Started](#getting-started)
-- [Workflows](#workflows)
-- [Contributing](#contributing)
+- [Getting Started](#-getting-started)
+- [Workflows](#️-workflows)
+- [Contributing](#-contributing)
 
 ---
 
