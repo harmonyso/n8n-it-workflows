@@ -95,4 +95,4 @@ MIT: use it, fork it, improve it.
 
 ---
 
-*Built by IT people, for IT people. ⚙️*
+*That's IT. ⚙️*
