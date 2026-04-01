@@ -1,0 +1,578 @@
+{
+  "name": "Okta Apps With No Users Assigned",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 🚀 Okta Apps With No Users Assigned\n\n**Purpose:** Audits your Okta tenant and reports any applications that have zero users assigned. Useful for security hygiene, license cleanup, and identifying orphaned apps.\n\n**Pattern:** Scheduled Task + HTTP API Integration\n\n---\n\n### ✅ Pre-flight Setup Checklist\n\n**Step 1 - Okta API Token**\n1. In Okta Admin: go to **Security → API → Tokens**\n2. Click **Create Token**, name it `n8n-audit`\n3. Copy the token value (shown only once)\n\n**Step 2 - n8n Credential**\n1. Go to **Credentials → Add Credential → HTTP Header Auth**\n2. Name: `Okta API Token`\n3. Header Name: `Authorization`\n4. Header Value: `SSWS <paste_your_token_here>`\n\n**Step 3 - Workflow Variable**\n1. Go to **Settings → Variables**\n2. Add variable: `OKTA_DOMAIN` = `yourcompany.okta.com`\n_(no https://, no trailing slash)_\n\n**Step 4 - Configure Notifications**\nSee sticky note on the right side of the canvas near Slack and Email nodes.\n\n**Step 5 - Test**\n1. Click **Manual Trigger → Test workflow**\n2. Verify apps appear in \"Extract App List\"\n3. Check the final report in \"Build Summary Report\"\n\n**Step 6 - Activate**\nToggle the workflow **Active** to enable the weekly Monday 8AM schedule.",
+        "height": 800,
+        "width": 548,
+        "color": 5
+      },
+      "id": "d8adec40-e253-4780-a774-80fa7e02957e",
+      "name": "Sticky Note – Overview & Setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -2752,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## ⚡ Triggers - Choose One\n\n**Manual Trigger** ↑ - for testing & on-demand runs\n\n**Schedule Trigger** ↓ - runs every Monday at 8:00 AM\nCron: `0 8 * * 1`\n\nTo change schedule, open the node and edit the cron.\nExamples:\n- Daily 9AM → `0 9 * * *`\n- Every Friday 6PM → `0 18 * * 5`\n- 1st of month → `0 8 1 * *`\n\n⚠️ Both triggers feed the same downstream node. Only one fires at a time.",
+        "height": 260,
+        "width": 340,
+        "color": 6
+      },
+      "id": "ba7a6ab1-f0da-49ea-a3dd-4ae8dad8f388",
+      "name": "Sticky Note – Triggers",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -2160,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 🔑 Credential + Variable Required\n\n**Credential:** HTTP Header Auth\n- Name: `Okta API Token`\n- Header Name: `Authorization`\n- Header Value: `SSWS <your_token>`\n\n**Variable:** `OKTA_DOMAIN`\n- Value: `yourcompany.okta.com`\n- (no https://, no trailing slash)\n\n⚠️ Token needs **Read-Only Admin** or **App Admin** role in Okta.\n\n📌 The same credential is reused by \"Get App Users (limit 1)\" — configure it once and both nodes share it.",
+        "height": 280,
+        "width": 300,
+        "color": 3
+      },
+      "id": "27deb991-018b-40f6-ad24-6e8f139b37f1",
+      "name": "Sticky Note – Okta Auth",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1792,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 📄 Pagination Note\n\nFetches up to **200 apps** per call (Okta's max page size).\n\n**Have more than 200 apps?**\nThe `_linkHeader` field is captured for you.\nOkta returns `Link: <url>; rel=\"next\"` when more pages exist.\n\nTo extend: add an IF node after \"Extract App List\" that checks `_linkHeader` for `rel=\"next\"`, then loops back to fetch the next page before continuing.",
+        "height": 220,
+        "width": 300,
+        "color": 4
+      },
+      "id": "9ae624f0-3800-49eb-9f83-20c7c7dec688",
+      "name": "Sticky Note – Pagination",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1792,
+        656
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 🐢 Rate Limit Protection\n\n**Okta default limit:** 600 requests/minute\n\nApps are processed in **batches of 5** to stay well within limits.\n\nIf you see **429 errors**, reduce batch size to `2` or `3`.\n\nThe loop runs until all apps are processed, then the workflow continues to the Filter node.",
+        "height": 216,
+        "width": 280,
+        "color": 4
+      },
+      "id": "e047f8c2-5608-4e79-9298-506234ae9c66",
+      "name": "Sticky Note – Rate Limit",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1488,
+        656
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 🔍 Efficient User Check\n\nUses `?limit=1` - we only need to know if **any** user exists, not fetch the full list.\n\nThis avoids pulling thousands of users for large apps, keeping the workflow fast.\n\nOutput: `hasUsers: true` (1 user returned) or `hasUsers: false` (empty array).",
+        "height": 200,
+        "width": 280,
+        "color": 6
+      },
+      "id": "e5391f38-a31b-4bfc-9ec1-54d694352477",
+      "name": "Sticky Note – User Check Strategy",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1168,
+        976
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 🏷️ Fields Available After This Node\n\n| Field | Description |\n|---|---|\n| `appId` | Okta application ID |\n| `appName` | Display label |\n| `appStatus` | ACTIVE / INACTIVE |\n| `appSignOnMode` | SAML_2_0, OIDC, etc. |\n| `appCreated` | ISO creation timestamp |\n| `hasUsers` | `true` or `false` |\n| `userCount` | 0 or 1 (capped) |\n\n\n\nOnly `hasUsers = false` items pass the next Filter.",
+        "height": 276,
+        "width": 412,
+        "color": 6
+      },
+      "id": "46517f3e-e85c-4d10-9868-288cfa0d5e41",
+      "name": "Sticky Note – Tag Fields",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -992,
+        1408
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 🔔 Configure Slack\n\n1. Open **Notify via Slack** node\n2. Update **Channel** → e.g. `#it-security`\n3. Add Slack credential if not set:\n   Credentials → Add → Slack OAuth2 API\n\n💡 Message uses `mrkdwn` so bullet points render correctly.\n\n---\n\n## 📧 Configure Email\n\n1. Open **Send Email Report** node\n2. Set `fromEmail` → your sender address\n3. Set `toEmail` → recipient(s)\n   _(comma-separate multiple addresses)_\n4. Add SMTP credential:\n   Credentials → Add → SMTP\n\n💡 Disable either node if you only want one notification channel.\n\n---\n\n## 🔕 FALSE branch\n\n**No Apps Found (Log Only)** - workflow ends silently. No empty report is sent.",
+        "height": 664,
+        "width": 360,
+        "color": 2
+      },
+      "id": "b873f383-f878-4104-a6ea-e1df8d048e4f",
+      "name": "Sticky Note – Notifications Setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        496,
+        992
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## ↔️ Routing Logic\n\n**TRUE** (count > 0) → Slack + Email sent in parallel\n\n**FALSE** (count = 0) → No-op, workflow ends quietly\n\nThis prevents alert fatigue when everything is clean.",
+        "height": 240,
+        "width": 300,
+        "color": 6
+      },
+      "id": "3dc68cd7-cda9-43f4-a856-87c244b7043c",
+      "name": "Sticky Note – IF Branch Logic",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -112,
+        976
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "8946261c-656a-4751-8289-cca218eca179",
+      "name": "Schedule Trigger (Weekly Monday 8AM)1",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1952,
+        1152
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://{{$vars.OKTA_DOMAIN}}/api/v1/apps?limit=200",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "136046ef-ed69-46cf-8712-ae634f52e816",
+      "name": "Get All Okta Apps1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1728,
+        1248
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract apps from the response body\nconst body = $input.first().json.body;\nconst apps = Array.isArray(body) ? body : [];\n\n// Also capture the Link header for pagination detection\nconst headers = $input.first().json.headers || {};\nconst linkHeader = headers['link'] || headers['Link'] || '';\n\n// Return each app as a separate item for parallel processing\nreturn apps.map(app => ({\n  json: {\n    appId: app.id,\n    appName: app.label,\n    appStatus: app.status,\n    appSignOnMode: app.signOnMode,\n    appCreated: app.created,\n    appLastUpdated: app.lastUpdated,\n    _linkHeader: linkHeader\n  }\n}));"
+      },
+      "id": "e09c101f-19c5-4aa4-aa1e-8af0877bb00c",
+      "name": "Extract App List1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1504,
+        1248
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 5,
+        "options": {}
+      },
+      "id": "29d49be6-3bfa-4b18-8c52-d000ddcccfca",
+      "name": "Split In Batches1",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -1280,
+        1248
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://{{$vars.OKTA_DOMAIN}}/api/v1/apps/{{$json.appId}}/users?limit=1",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "3f0bf7f2-774f-410c-a820-77bb86b8c2af",
+      "name": "Get App Users (limit 1)1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1056,
+        1248
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge app metadata with the user-count check result\nconst items = $input.all();\n\nreturn items.map(item => {\n  const body = item.json.body;\n  const users = Array.isArray(body) ? body : [];\n  const userCount = users.length;\n\n  return {\n    json: {\n      appId: item.json.appId || $('Split In Batches1').item.json.appId,\n      appName: item.json.appName || $('Split In Batches1').item.json.appName,\n      appStatus: item.json.appStatus || $('Split In Batches1').item.json.appStatus,\n      appSignOnMode: item.json.appSignOnMode || $('Split In Batches1').item.json.appSignOnMode,\n      appCreated: item.json.appCreated || $('Split In Batches1').item.json.appCreated,\n      hasUsers: userCount > 0,\n      userCount: userCount\n    }\n  };\n});"
+      },
+      "id": "547e5b0d-dfb1-4806-9192-f62c4d4436ac",
+      "name": "Tag Apps With User Count1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -832,
+        1248
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "filter-no-users",
+              "leftValue": "={{$json.hasUsers}}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a9b2bbed-724b-4589-a5d9-cf2b978e9a57",
+      "name": "Filter: No Users Assigned1",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [
+        -608,
+        1248
+      ]
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "appsWithNoUsers",
+        "options": {}
+      },
+      "id": "aff3ca56-e7cb-4302-9bb4-413be0eb5971",
+      "name": "Aggregate Results1",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        -384,
+        1248
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const apps = $input.first().json.appsWithNoUsers || [];\nconst count = apps.length;\nconst timestamp = new Date().toISOString();\n\n// Build a clean summary\nconst rows = apps.map(a =>\n  `• ${a.appName} (ID: ${a.appId}) — Status: ${a.appStatus} | Sign-on: ${a.appSignOnMode}`\n).join('\\n');\n\nconst summary = `📋 Okta Apps With No Users Assigned\\n` +\n  `Generated: ${timestamp}\\n` +\n  `Total apps found: ${count}\\n\\n` +\n  (count > 0 ? rows : 'All apps have at least one user assigned. ✅');\n\nreturn [{\n  json: {\n    summary,\n    count,\n    timestamp,\n    apps\n  }\n}];"
+      },
+      "id": "b0468934-5c6d-48ae-ba30-edef2523926e",
+      "name": "Build Summary Report1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        1248
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-has-results",
+              "leftValue": "={{$json.count}}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "4546af9a-9c9f-41f3-9ce5-21296addf7b9",
+      "name": "IF: Apps Found?1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        64,
+        1248
+      ]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#security-alerts",
+          "mode": "name"
+        },
+        "text": "={{$json.summary}}",
+        "otherOptions": {
+          "mrkdwn": true
+        }
+      },
+      "id": "4ea8d410-79b0-4cd6-922f-6bdb476bde9f",
+      "name": "Notify via Slack1",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        288,
+        1056
+      ],
+      "webhookId": "13aaad52-3939-445a-bc0d-62998d9881f9"
+    },
+    {
+      "parameters": {
+        "fromEmail": "n8n-automation@yourcompany.com",
+        "toEmail": "it-admin@yourcompany.com",
+        "subject": "=[Okta Audit] {{$json.count}} Apps With No Users Assigned — {{$json.timestamp}}",
+        "options": {}
+      },
+      "id": "be1c91ca-1834-4911-a3a0-219fda3df5d1",
+      "name": "Send Email Report1",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        288,
+        1248
+      ],
+      "webhookId": "eb364c41-8329-4e4e-8545-fffd080f80b5"
+    },
+    {
+      "parameters": {},
+      "id": "30d26c35-fc2c-454d-a621-4fd6e6091b38",
+      "name": "No Apps Found (Log Only)1",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        288,
+        1440
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1952,
+        1344
+      ],
+      "id": "70ca6a0c-86ef-4b9f-915a-fd37c6ac54ae",
+      "name": "When clicking ‘Execute workflow’"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger (Weekly Monday 8AM)1": {
+      "main": [
+        [
+          {
+            "node": "Get All Okta Apps1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Okta Apps1": {
+      "main": [
+        [
+          {
+            "node": "Extract App List1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract App List1": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split In Batches1": {
+      "main": [
+        [
+          {
+            "node": "Get App Users (limit 1)1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get App Users (limit 1)1": {
+      "main": [
+        [
+          {
+            "node": "Tag Apps With User Count1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tag Apps With User Count1": {
+      "main": [
+        [
+          {
+            "node": "Filter: No Users Assigned1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter: No Users Assigned1": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Results1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Results1": {
+      "main": [
+        [
+          {
+            "node": "Build Summary Report1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Summary Report1": {
+      "main": [
+        [
+          {
+            "node": "IF: Apps Found?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF: Apps Found?1": {
+      "main": [
+        [
+          {
+            "node": "Notify via Slack1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Email Report1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Apps Found (Log Only)1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Get All Okta Apps1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "49510b86-d6e7-4631-a2e1-fc4c98758d62",
+  "meta": {
+    "instanceId": "9f4101dca2b2c5ff47a011feb0a2af1449844d4820deba2db4771933cb2532b0"
+  },
+  "id": "5qSv6j27bWs9t3tj",
+  "tags": []
+}
