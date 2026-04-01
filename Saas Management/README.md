@@ -54,4 +54,4 @@ Each workflow has sticky notes and nodes marked with `⚠️ CONFIGURE ME` where
 
 ---
 
-*Part of [n8n-it-workflows](../README.md) - built by IT people, for IT people. ⚙️*
+*That's IT. ⚙️*
